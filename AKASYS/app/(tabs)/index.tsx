@@ -1,14 +1,16 @@
-import React from 'react';
-import { StyleSheet, ScrollView, View, Text, TouchableOpacity, Dimensions } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { Link } from 'expo-router';
+import React, { useState } from 'react';
+import { Dimensions, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 const { width } = Dimensions.get('window');
 
 export default function HomeScreen() {
   const colors = Colors.dark;
+  const [sortBy, setSortBy] = useState('name');
+  const [sortOrder, setSortOrder] = useState('asc');
 
   const dashboardCards = [
     { 
@@ -54,6 +56,47 @@ export default function HomeScreen() {
     { id: 3, title: 'Backup Automático', subtitle: 'Concluído com sucesso', icon: 'icloud.fill' },
     { id: 4, title: 'Nova Atualização', subtitle: 'Versão 2.1.0 disponível', icon: 'arrow.down.circle.fill' },
   ];
+
+  // Dados da tabela
+  const tableData = [
+    { id: 1, name: 'João Silva', email: 'joao@email.com', status: 'Ativo', role: 'Admin', lastLogin: '2024-01-15', revenue: 'R$ 12.500' },
+    { id: 2, name: 'Maria Santos', email: 'maria@email.com', status: 'Ativo', role: 'Vendedor', lastLogin: '2024-01-14', revenue: 'R$ 8.750' },
+    { id: 3, name: 'Pedro Costa', email: 'pedro@email.com', status: 'Inativo', role: 'Vendedor', lastLogin: '2024-01-10', revenue: 'R$ 5.200' },
+    { id: 4, name: 'Ana Oliveira', email: 'ana@email.com', status: 'Ativo', role: 'Gerente', lastLogin: '2024-01-15', revenue: 'R$ 15.300' },
+    { id: 5, name: 'Carlos Lima', email: 'carlos@email.com', status: 'Ativo', role: 'Vendedor', lastLogin: '2024-01-13', revenue: 'R$ 9.800' },
+    { id: 6, name: 'Lucia Ferreira', email: 'lucia@email.com', status: 'Pendente', role: 'Vendedor', lastLogin: '2024-01-12', revenue: 'R$ 3.400' },
+  ];
+
+  // Função para ordenar dados
+  const sortData = (data: any[], field: string, order: string) => {
+    return [...data].sort((a, b) => {
+      let aVal = a[field];
+      let bVal = b[field];
+      
+      // Tratamento especial para valores monetários
+      if (field === 'revenue') {
+        aVal = parseFloat(aVal.replace('R$ ', '').replace('.', '').replace(',', '.'));
+        bVal = parseFloat(bVal.replace('R$ ', '').replace('.', '').replace(',', '.'));
+      }
+      
+      if (order === 'asc') {
+        return aVal > bVal ? 1 : -1;
+      } else {
+        return aVal < bVal ? 1 : -1;
+      }
+    });
+  };
+
+  const handleSort = (field: string) => {
+    if (sortBy === field) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(field);
+      setSortOrder('asc');
+    }
+  };
+
+  const sortedData = sortData(tableData, sortBy, sortOrder);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -135,6 +178,215 @@ export default function HomeScreen() {
               </View>
             ))}
           </View>
+        </View>
+
+        {/* Data Table */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Dados dos Usuários</Text>
+            <TouchableOpacity>
+              <Text style={[styles.seeAllText, { color: colors.accent }]}>Exportar</Text>
+            </TouchableOpacity>
+          </View>
+          
+          {/* Mobile-friendly card layout for small screens */}
+          {width < 768 ? (
+            <View style={styles.mobileTableContainer}>
+              {sortedData.map((row, index) => (
+                <View 
+                  key={row.id} 
+                  style={[
+                    styles.mobileTableCard, 
+                    { 
+                      backgroundColor: colors.card, 
+                      borderColor: colors.border 
+                    }
+                  ]}
+                >
+                  <View style={styles.mobileCardHeader}>
+                    <Text style={[styles.mobileCardName, { color: colors.text }]}>
+                      {row.name}
+                    </Text>
+                    <View style={[
+                      styles.statusBadge, 
+                      { 
+                        backgroundColor: row.status === 'Ativo' ? colors.accent + '20' : 
+                                       row.status === 'Inativo' ? colors.muted + '20' : 
+                                       colors.highlight + '20'
+                      }
+                    ]}>
+                      <Text style={[
+                        styles.statusText, 
+                        { 
+                          color: row.status === 'Ativo' ? colors.accent : 
+                                 row.status === 'Inativo' ? colors.muted : 
+                                 colors.highlight
+                        }
+                      ]}>
+                        {row.status}
+                      </Text>
+                    </View>
+                  </View>
+                  
+                  <View style={styles.mobileCardContent}>
+                    <View style={styles.mobileCardRow}>
+                      <Text style={[styles.mobileCardLabel, { color: colors.muted }]}>Email:</Text>
+                      <Text style={[styles.mobileCardValue, { color: colors.text }]} numberOfLines={1}>
+                        {row.email}
+                      </Text>
+                    </View>
+                    
+                    <View style={styles.mobileCardRow}>
+                      <Text style={[styles.mobileCardLabel, { color: colors.muted }]}>Cargo:</Text>
+                      <Text style={[styles.mobileCardValue, { color: colors.text }]}>
+                        {row.role}
+                      </Text>
+                    </View>
+                    
+                    <View style={styles.mobileCardRow}>
+                      <Text style={[styles.mobileCardLabel, { color: colors.muted }]}>Receita:</Text>
+                      <Text style={[styles.mobileCardValue, { color: colors.accent, fontWeight: 'bold' }]}>
+                        {row.revenue}
+                      </Text>
+                    </View>
+                    
+                    <View style={styles.mobileCardRow}>
+                      <Text style={[styles.mobileCardLabel, { color: colors.muted }]}>Último Login:</Text>
+                      <Text style={[styles.mobileCardValue, { color: colors.text }]}>
+                        {row.lastLogin}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+              ))}
+            </View>
+          ) : (
+            /* Desktop table layout */
+            <View style={[styles.tableContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              {/* Table Header */}
+              <View style={[styles.tableHeader, { borderBottomColor: colors.border }]}>
+                <TouchableOpacity 
+                  style={styles.tableHeaderCell} 
+                  onPress={() => handleSort('name')}
+                >
+                  <Text style={[styles.tableHeaderText, { color: colors.text }]}>Nome</Text>
+                  <IconSymbol 
+                    name={sortBy === 'name' ? (sortOrder === 'asc' ? 'arrow.up' : 'arrow.down') : 'arrow.up.arrow.down'} 
+                    size={12} 
+                    color={colors.muted} 
+                  />
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  style={styles.tableHeaderCell} 
+                  onPress={() => handleSort('email')}
+                >
+                  <Text style={[styles.tableHeaderText, { color: colors.text }]}>Email</Text>
+                  <IconSymbol 
+                    name={sortBy === 'email' ? (sortOrder === 'asc' ? 'arrow.up' : 'arrow.down') : 'arrow.up.arrow.down'} 
+                    size={12} 
+                    color={colors.muted} 
+                  />
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  style={styles.tableHeaderCell} 
+                  onPress={() => handleSort('status')}
+                >
+                  <Text style={[styles.tableHeaderText, { color: colors.text }]}>Status</Text>
+                  <IconSymbol 
+                    name={sortBy === 'status' ? (sortOrder === 'asc' ? 'arrow.up' : 'arrow.down') : 'arrow.up.arrow.down'} 
+                    size={12} 
+                    color={colors.muted} 
+                  />
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  style={styles.tableHeaderCell} 
+                  onPress={() => handleSort('role')}
+                >
+                  <Text style={[styles.tableHeaderText, { color: colors.text }]}>Cargo</Text>
+                  <IconSymbol 
+                    name={sortBy === 'role' ? (sortOrder === 'asc' ? 'arrow.up' : 'arrow.down') : 'arrow.up.arrow.down'} 
+                    size={12} 
+                    color={colors.muted} 
+                  />
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  style={styles.tableHeaderCell} 
+                  onPress={() => handleSort('revenue')}
+                >
+                  <Text style={[styles.tableHeaderText, { color: colors.text }]}>Receita</Text>
+                  <IconSymbol 
+                    name={sortBy === 'revenue' ? (sortOrder === 'asc' ? 'arrow.up' : 'arrow.down') : 'arrow.up.arrow.down'} 
+                    size={12} 
+                    color={colors.muted} 
+                  />
+                </TouchableOpacity>
+              </View>
+
+              {/* Table Rows */}
+              {sortedData.map((row, index) => (
+                <View 
+                  key={row.id} 
+                  style={[
+                    styles.tableRow, 
+                    { 
+                      borderBottomColor: colors.border,
+                      backgroundColor: index % 2 === 0 ? 'transparent' : colors.surface + '20'
+                    }
+                  ]}
+                >
+                  <View style={styles.tableCell}>
+                    <Text style={[styles.tableCellText, { color: colors.text }]} numberOfLines={1}>
+                      {row.name}
+                    </Text>
+                  </View>
+                  
+                  <View style={styles.tableCell}>
+                    <Text style={[styles.tableCellText, { color: colors.muted }]} numberOfLines={1}>
+                      {row.email}
+                    </Text>
+                  </View>
+                  
+                  <View style={styles.tableCell}>
+                    <View style={[
+                      styles.statusBadge, 
+                      { 
+                        backgroundColor: row.status === 'Ativo' ? colors.accent + '20' : 
+                                       row.status === 'Inativo' ? colors.muted + '20' : 
+                                       colors.highlight + '20'
+                      }
+                    ]}>
+                      <Text style={[
+                        styles.statusText, 
+                        { 
+                          color: row.status === 'Ativo' ? colors.accent : 
+                                 row.status === 'Inativo' ? colors.muted : 
+                                 colors.highlight
+                        }
+                      ]}>
+                        {row.status}
+                      </Text>
+                    </View>
+                  </View>
+                  
+                  <View style={styles.tableCell}>
+                    <Text style={[styles.tableCellText, { color: colors.text }]} numberOfLines={1}>
+                      {row.role}
+                    </Text>
+                  </View>
+                  
+                  <View style={styles.tableCell}>
+                    <Text style={[styles.tableCellText, { color: colors.text }]} numberOfLines={1}>
+                      {row.revenue}
+                    </Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -277,5 +529,97 @@ const styles = StyleSheet.create({
   },
   dataSubtitle: {
     fontSize: 14,
+  },
+  // Table Styles
+  tableContainer: {
+    marginHorizontal: 20,
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 1,
+  },
+  tableHeader: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderBottomWidth: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+  },
+  tableHeaderCell: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 8,
+  },
+  tableHeaderText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  tableRow: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+  },
+  tableCell: {
+    flex: 1,
+    paddingHorizontal: 8,
+    justifyContent: 'center',
+  },
+  tableCellText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  statusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    alignSelf: 'flex-start',
+  },
+  statusText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  // Mobile Table Styles
+  mobileTableContainer: {
+    paddingHorizontal: 20,
+    gap: 12,
+  },
+  mobileTableCard: {
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 16,
+  },
+  mobileCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  mobileCardName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    flex: 1,
+    marginRight: 8,
+  },
+  mobileCardContent: {
+    gap: 8,
+  },
+  mobileCardRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  mobileCardLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    minWidth: 80,
+  },
+  mobileCardValue: {
+    fontSize: 14,
+    flex: 1,
+    textAlign: 'right',
   },
 });

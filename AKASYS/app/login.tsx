@@ -1,20 +1,28 @@
-import React, { useState } from 'react';
-import { StyleSheet, View, Text, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
+import { router } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import { Alert, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function LoginScreen() {
   const colors = Colors.dark;
   // Cores de destaque
   const blue = Colors.dark.primary;
   const gold = Colors.dark.highlight;
-  const { login } = useAuth();
+  const { login, isAuthenticated, isLoading: authLoading } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+
+  // Redirecionar se já estiver autenticado
+  useEffect(() => {
+    if (!authLoading && isAuthenticated) {
+      router.replace('/(tabs)');
+    }
+  }, [isAuthenticated, authLoading]);
 
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
@@ -26,7 +34,10 @@ export default function LoginScreen() {
     
     try {
       const success = await login(email, password);
-      if (!success) {
+      if (success) {
+        // Redirecionar para a tela principal após login bem-sucedido
+        router.replace('/(tabs)');
+      } else {
         Alert.alert('Erro', 'Email ou senha incorretos');
       }
     } catch (error) {
@@ -39,6 +50,17 @@ export default function LoginScreen() {
   const handleForgotPassword = () => {
     Alert.alert('Recuperar Senha', 'Funcionalidade em desenvolvimento');
   };
+
+  // Mostrar loading enquanto verifica autenticação
+  if (authLoading) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+        <View style={styles.loadingContainer}>
+          <Text style={[styles.loadingText, { color: colors.text }]}>Verificando autenticação...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -218,5 +240,14 @@ const styles = StyleSheet.create({
   demoText: {
     fontSize: 12,
     marginBottom: 2,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    fontSize: 16,
+    fontWeight: '500',
   },
 });

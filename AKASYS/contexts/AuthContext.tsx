@@ -1,5 +1,5 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import React, { createContext, ReactNode, useContext, useEffect, useState } from 'react';
 
 interface User {
   id: string;
@@ -31,9 +31,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   const checkAuthState = async () => {
     try {
+      console.log('Checking auth state...');
       const userData = await AsyncStorage.getItem('user');
       if (userData) {
-        setUser(JSON.parse(userData));
+        const parsedUser = JSON.parse(userData);
+        setUser(parsedUser);
+        console.log('User found in storage:', parsedUser);
+      } else {
+        console.log('No user found in storage');
       }
     } catch (error) {
       console.error('Error checking auth state:', error);
@@ -44,6 +49,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   const login = async (email: string, password: string): Promise<boolean> => {
     try {
+      console.log('Attempting login with:', { email, password: '***' });
+      
       // Simular validação de login
       if (email === 'admin@admin.com' && password === '123456') {
         const userData: User = {
@@ -54,8 +61,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
         
         await AsyncStorage.setItem('user', JSON.stringify(userData));
         setUser(userData);
+        console.log('Login successful, user set:', userData);
         return true;
       }
+      
+      console.log('Login failed: invalid credentials');
       return false;
     } catch (error) {
       console.error('Login error:', error);
