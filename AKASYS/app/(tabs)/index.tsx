@@ -9,12 +9,34 @@ import {
   ActivityIndicator,
   ScrollView,
 } from "react-native";
+import * as DocumentPicker from "expo-document-picker";
+import Constants from "expo-constants";
+import { Platform } from "react-native";
+import * as FileSystem from "expo-file-system/legacy";
 
 export default function App() {
   const [email, setEmail] = useState("");
   const [assunto, setAssunto] = useState("");
   const [corpo, setCorpo] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // Upload state
+  const [uploadTipo, setUploadTipo] = useState<"vendas" | "estoque">("vendas");
+  const [pickedFile, setPickedFile] = useState<{
+    uri: string;
+    name: string;
+    mimeType?: string | null;
+    size?: number | null;
+  } | null>(null);
+  const [uploadLoading, setUploadLoading] = useState(false);
+
+  const BASE_URL = (() => {
+    const extra = (Constants.expoConfig as any)?.extra || {};
+    const configured = extra.API_BASE_URL as string | undefined;
+    if (configured) return configured;
+    if (Platform.OS === "android") return "http://192.168.1.7:8000"; // Android emulator
+    return "http://localhost:8000"; // iOS simulator / web fallback
+  })();
 
   const handleEnviar = async () => {
     if (!email || !assunto || !corpo) {
@@ -30,7 +52,7 @@ export default function App() {
     try {
       // Monta query string para o backend
       const params = new URLSearchParams({ assunto, corpo }).toString();
-      const url = `http://192.168.1.3:8000/relatorios/enviar?${params}`;
+      const url = `${BASE_URL}/relatorios/enviar?${params}`;
 
       const response = await fetch(url, {
         method: "POST",
@@ -41,14 +63,16 @@ export default function App() {
 
       clearTimeout(timeout);
 
-      const data = await response.json().catch(() => null);
+      const rawText = await response.text();
+      let data: any = null;
+      try { data = rawText ? JSON.parse(rawText) : null; } catch {}
 
       if (!response.ok) {
-        const msg = data?.detail || JSON.stringify(data) || `Erro: ${response.status}`;
+        const msg = data?.detail || (data && Object.keys(data).length ? JSON.stringify(data) : rawText || "(sem corpo)") || `Erro: ${response.status}`;
         throw new Error(msg);
       }
 
-      Alert.alert("Sucesso", data?.msg || "Relatório enviado!");
+      Alert.alert("Sucesso", data?.msg || rawText || "Relatório enviado!");
       setEmail("");
       setAssunto("");
       setCorpo("");
@@ -69,9 +93,106 @@ export default function App() {
     }
   };
 
+  const handlePickFile = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        multiple: false,
+        copyToCacheDirectory: true,
+        type: "*/*",
+      });
+
+      if (result.canceled) return;
+
+      const file = result.assets?.[0];
+      if (!file) return;
+
+      setPickedFile({
+        uri: file.uri,
+        name: file.name ?? "upload.csv",
+        mimeType: (file as any).mimeType ?? (file as any).mimeType ?? undefined,
+        size: file.size ?? undefined,
+      });
+    } catch (err: any) {
+      Alert.alert("Erro", "Falha ao selecionar arquivo");
+    }
+  };
+
+  const handleUpload = async () => {
+    if (!pickedFile) {
+      Alert.alert("Atenção", "Selecione um arquivo primeiro.");
+      return;
+    }
+
+    setUploadLoading(true);
+
+    try {
+      const url = `${BASE_URL}/upload/${uploadTipo}`;
+
+      const result = await FileSystem.uploadAsync(url, pickedFile.uri, {
+        httpMethod: "POST",
+        uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+        fieldName: "file",
+        mimeType: pickedFile.name?.toLowerCase().endsWith(".csv") ? "text/csv" : pickedFile.mimeType || "application/octet-stream",
+      });
+
+      const rawText = result.body || "";
+      let data: any = null;
+      try { data = rawText ? JSON.parse(rawText) : null; } catch {}
+      if (result.status < 200 || result.status >= 300) {
+        const msg = data?.detail || (data && Object.keys(data).length ? JSON.stringify(data) : rawText || "(sem corpo)") || `Erro: ${result.status}`;
+        throw new Error(msg);
+      }
+
+      Alert.alert("Sucesso", data?.msg || rawText || "Upload realizado e banco populado!");
+      setPickedFile(null);
+    } catch (err: any) {
+      if (err.message?.includes("Network request failed")) {
+        Alert.alert(
+          "Erro de conexão",
+          "Não foi possível conectar ao servidor. Verifique o IP e se o backend está rodando."
+        );
+      } else {
+        Alert.alert("Erro", typeof err === "object" ? JSON.stringify(err) : err.toString());
+      }
+    } finally {
+      setUploadLoading(false);
+    }
+  };
+
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>Enviar Relatórios</Text>
+      <Text style={styles.title}>Popular Banco de Dados</Text>
+
+      <View style={styles.row}>
+        <View style={styles.rowItem}>
+          <Button
+            title={`Tipo: ${uploadTipo === "vendas" ? "Vendas" : "Estoque"}`}
+            color="#1db954"
+            onPress={() =>
+              setUploadTipo((prev) => (prev === "vendas" ? "estoque" : "vendas"))
+            }
+          />
+        </View>
+        <View style={styles.rowItem}>
+          <Button title="Escolher arquivo" color="#1db954" onPress={handlePickFile} />
+        </View>
+      </View>
+
+      {pickedFile ? (
+        <Text style={styles.fileLabel}>Selecionado: {pickedFile.name}</Text>
+      ) : (
+        <Text style={styles.fileLabel}>Nenhum arquivo selecionado</Text>
+      )}
+
+      <View style={styles.buttonContainer}>
+        {uploadLoading ? (
+          <ActivityIndicator size="large" color="#00ff00" />
+        ) : (
+          <Button title="Fazer upload" color="#1db954" onPress={handleUpload} />
+        )}
+      </View>
+
+      <Text style={[styles.title, { marginTop: 30 }]}>Enviar Relatórios</Text>
 
       <TextInput
         style={styles.input}
@@ -125,6 +246,11 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     color: "#fff", // texto branco
   },
+  fileLabel: {
+    width: "100%",
+    color: "#ccc",
+    marginBottom: 10,
+  },
   input: {
     width: "100%",
     padding: 12,
@@ -138,6 +264,15 @@ const styles = StyleSheet.create({
   textArea: {
     height: 100,
     textAlignVertical: "top",
+  },
+  row: {
+    width: "100%",
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 10,
+  },
+  rowItem: {
+    flex: 1,
   },
   buttonContainer: {
     width: "100%",

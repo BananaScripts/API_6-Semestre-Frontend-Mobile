@@ -18,6 +18,23 @@ const MAPPING = {
   'paperplane.fill': 'send',
   'chevron.left.forwardslash.chevron.right': 'code',
   'chevron.right': 'chevron-right',
+  // Admin screen icons
+  'person': 'person',
+  'envelope': 'email',
+  'lock': 'lock',
+  'magnifyingglass': 'search',
+  'arrow.down.circle': 'download',
+  'person.badge.plus': 'person-add',
+  'person.2': 'people',
+  'square.and.arrow.up': 'share',
+  'gearshape': 'settings',
+  'person.circle.fill': 'person',
+  'crown.fill': 'workspace-premium',
+  'shield.fill': 'shield',
+  'person.fill': 'person',
+  'pencil': 'edit',
+  'trash': 'delete',
+  'plus': 'add',
 } as IconMapping;
 
 /**
