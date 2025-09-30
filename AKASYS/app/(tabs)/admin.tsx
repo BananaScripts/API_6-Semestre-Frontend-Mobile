@@ -1,75 +1,175 @@
-import React, { useState } from 'react';
-import { StyleSheet, ScrollView, View, Text, TouchableOpacity, TextInput, FlatList, Switch } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { StyleSheet, ScrollView, View, Text, TouchableOpacity, TextInput, FlatList, Switch, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
+import Constants from 'expo-constants';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function AdminScreen() {
   const colors = Colors.dark;
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFilter, setSelectedFilter] = useState('all');
 
-  const users = [
-    {
-      id: 1,
-      name: 'João Silva',
-      email: 'joao.silva@email.com',
-      role: 'admin',
-      status: 'active',
-      lastLogin: '2 horas atrás',
-      avatar: 'person.circle.fill',
-    },
-    {
-      id: 2,
-      name: 'Maria Santos',
-      email: 'maria.santos@email.com',
-      role: 'moderator',
-      status: 'active',
-      lastLogin: '1 dia atrás',
-      avatar: 'person.circle.fill',
-    },
-    {
-      id: 3,
-      name: 'Carlos Oliveira',
-      email: 'carlos.oliveira@email.com',
-      role: 'user',
-      status: 'inactive',
-      lastLogin: '1 semana atrás',
-      avatar: 'person.circle.fill',
-    },
-    {
-      id: 4,
-      name: 'Ana Costa',
-      email: 'ana.costa@email.com',
-      role: 'user',
-      status: 'active',
-      lastLogin: '3 horas atrás',
-      avatar: 'person.circle.fill',
-    },
-    {
-      id: 5,
-      name: 'Pedro Lima',
-      email: 'pedro.lima@email.com',
-      role: 'moderator',
-      status: 'suspended',
-      lastLogin: '2 dias atrás',
-      avatar: 'person.circle.fill',
-    },
-  ];
+  const BASE_URL = useMemo(() => {
+    const extra = (Constants.expoConfig as any)?.extra || {};
+    const configured = extra.API_BASE_URL as string | undefined;
+    return configured ?? 'http://192.168.1.7:8000';
+  }, []);
+
+  type Usuario = { id: number; nome: string; email: string; senha?: string };
+
+  const [users, setUsers] = useState<Usuario[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+
+  const [formId, setFormId] = useState<number | null>(null);
+  const [formNome, setFormNome] = useState('');
+  const [formEmail, setFormEmail] = useState('');
+  const [formSenha, setFormSenha] = useState('');
+  const [showForm, setShowForm] = useState(false);
+
+  const [readId, setReadId] = useState('');
+
+  // Persist/restore local list so it survives app reloads (since API lacks GET all)
+  const USERS_CACHE_KEY = 'usuarios_cache';
+  useEffect(() => {
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(USERS_CACHE_KEY);
+        if (raw) {
+          const parsed: Usuario[] = JSON.parse(raw);
+          if (Array.isArray(parsed)) setUsers(parsed);
+        }
+      } catch {}
+    })();
+  }, []);
+
+  const persistUsers = async (next: Usuario[]) => {
+    try { await AsyncStorage.setItem(USERS_CACHE_KEY, JSON.stringify(next)); } catch {}
+  };
+
+  // display adapter
+  const normalizeToCard = (u: Usuario) => ({
+    id: u.id,
+    name: u.nome,
+    email: u.email,
+    role: 'user',
+    status: 'active',
+    lastLogin: '—',
+    avatar: 'person.circle.fill',
+  });
 
   const filters = [
     { key: 'all', label: 'Todos', count: users.length },
-    { key: 'active', label: 'Ativos', count: users.filter(u => u.status === 'active').length },
-    { key: 'inactive', label: 'Inativos', count: users.filter(u => u.status === 'inactive').length },
-    { key: 'suspended', label: 'Suspensos', count: users.filter(u => u.status === 'suspended').length },
   ];
 
-  const filteredUsers = users.filter(user => {
-    const matchesSearch = user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         user.email.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesFilter = selectedFilter === 'all' || user.status === selectedFilter;
-    return matchesSearch && matchesFilter;
-  });
+  const filteredUsers = users
+    .map(normalizeToCard)
+    .filter(user => {
+      const matchesSearch = user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                           user.email.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesFilter = selectedFilter === 'all';
+      return matchesSearch && matchesFilter;
+    });
+
+  // API functions
+  const createUsuario = async (payload: { nome: string; email: string; senha: string }) => {
+    setSaving(true);
+    try {
+      const response = await fetch(`${BASE_URL}/usuario`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const rawText = await response.text();
+      const data = rawText ? JSON.parse(rawText) : null;
+      if (!response.ok) throw new Error(data?.detail || rawText || `Erro ${response.status}`);
+      setUsers(prev => {
+        const next = [data, ...prev.filter(p => p.id !== data.id)];
+        persistUsers(next);
+        return next;
+      });
+      Alert.alert('Sucesso', 'Usuário criado com sucesso');
+      setShowForm(false);
+      setFormId(null); setFormNome(''); setFormEmail(''); setFormSenha('');
+    } catch (e: any) {
+      Alert.alert('Erro', e?.message || 'Falha ao criar usuário');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const readUsuario = async (id: number) => {
+    setLoading(true);
+    try {
+      const response = await fetch(`${BASE_URL}/usuario/${id}`);
+      const rawText = await response.text();
+      const data = rawText ? JSON.parse(rawText) : null;
+      if (!response.ok) throw new Error(data?.detail || rawText || `Erro ${response.status}`);
+      setUsers(prev => {
+        const next = prev.find(u => u.id === data.id)
+          ? prev.map(u => (u.id === data.id ? data : u))
+          : [data, ...prev];
+        persistUsers(next);
+        return next;
+      });
+      Alert.alert('Sucesso', `Usuário ${data?.id} carregado`);
+    } catch (e: any) {
+      Alert.alert('Erro', e?.message || 'Falha ao buscar usuário');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const updateUsuario = async (id: number, payload: { nome: string; email: string; senha?: string }) => {
+    setSaving(true);
+    try {
+      const response = await fetch(`${BASE_URL}/usuario/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const rawText = await response.text();
+      const data = rawText ? JSON.parse(rawText) : null;
+      if (!response.ok) throw new Error(data?.detail || rawText || `Erro ${response.status}`);
+      setUsers(prev => {
+        const next = prev.map(u => (u.id === id ? data : u));
+        persistUsers(next);
+        return next;
+      });
+      Alert.alert('Sucesso', 'Usuário atualizado');
+      setShowForm(false);
+      setFormId(null); setFormNome(''); setFormEmail(''); setFormSenha('');
+    } catch (e: any) {
+      Alert.alert('Erro', e?.message || 'Falha ao atualizar usuário');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deleteUsuario = async (id: number) => {
+    setDeletingId(id);
+    try {
+      const response = await fetch(`${BASE_URL}/usuario/${id}`, { method: 'DELETE' });
+      if (!response.ok && response.status !== 204) {
+        const rawText = await response.text();
+        let data: any = null; try { data = rawText ? JSON.parse(rawText) : null; } catch {}
+        throw new Error(data?.detail || rawText || `Erro ${response.status}`);
+      }
+      setUsers(prev => {
+        const next = prev.filter(u => u.id !== id);
+        persistUsers(next);
+        return next;
+      });
+      Alert.alert('Sucesso', 'Usuário removido');
+    } catch (e: any) {
+      Alert.alert('Erro', e?.message || 'Falha ao excluir usuário');
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -124,11 +224,27 @@ export default function AdminScreen() {
         </View>
         
         <View style={styles.actionButtons}>
-          <TouchableOpacity style={[styles.actionButton, { backgroundColor: colors.surface }]}>
+          <TouchableOpacity
+            onPress={() => {
+              const u = users.find(u => u.id === item.id);
+              if (!u) return;
+              setFormId(u.id); setFormNome(u.nome); setFormEmail(u.email); setFormSenha('');
+              setShowForm(true);
+            }}
+            style={[styles.actionButton, { backgroundColor: colors.surface }]}
+          >
             <IconSymbol name="pencil" size={16} color={colors.text} />
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.actionButton, { backgroundColor: colors.surface }]}>
-            <IconSymbol name="trash" size={16} color="#FF3B30" />
+          <TouchableOpacity
+            onPress={() => deleteUsuario(item.id)}
+            disabled={deletingId === item.id}
+            style={[styles.actionButton, { backgroundColor: colors.surface }]}
+          >
+            {deletingId === item.id ? (
+              <ActivityIndicator size="small" color="#FF3B30" />
+            ) : (
+              <IconSymbol name="trash" size={16} color="#FF3B30" />
+            )}
           </TouchableOpacity>
         </View>
       </View>
@@ -140,7 +256,7 @@ export default function AdminScreen() {
       {/* Header */}
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Gerenciamento</Text>
-        <TouchableOpacity style={[styles.addButton, { backgroundColor: colors.card }]}>
+        <TouchableOpacity onPress={() => { setShowForm(v => !v); if (!showForm) { setFormId(null); setFormNome(''); setFormEmail(''); setFormSenha(''); } }} style={[styles.addButton, { backgroundColor: colors.card }]}>
           <IconSymbol name="plus" size={20} color={colors.text} />
         </TouchableOpacity>
       </View>
@@ -151,88 +267,108 @@ export default function AdminScreen() {
           <Text style={[styles.statValue, { color: colors.text }]}>{users.length}</Text>
           <Text style={[styles.statLabel, { color: colors.muted }]}>Total</Text>
         </View>
-        <View style={[styles.statCard, { backgroundColor: colors.card }]}>
-          <Text style={[styles.statValue, { color: colors.accent }]}>
-            {users.filter(u => u.status === 'active').length}
-          </Text>
-          <Text style={[styles.statLabel, { color: colors.muted }]}>Ativos</Text>
-        </View>
-        <View style={[styles.statCard, { backgroundColor: colors.card }]}>
-          <Text style={[styles.statValue, { color: colors.muted }]}>
-            {users.filter(u => u.status === 'inactive').length}
-          </Text>
-          <Text style={[styles.statLabel, { color: colors.muted }]}>Inativos</Text>
-        </View>
+        
       </View>
 
-      {/* Search */}
+      
+
+      {/* Create/Update User Form */}
+      {showForm && (
+        <View style={{ paddingHorizontal: 20, marginBottom: 16 }}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>
+            {formId ? `Editar Usuário #${formId}` : 'Novo Usuário'}
+          </Text>
+          <View style={[styles.searchBar, { backgroundColor: colors.card, borderColor: colors.border, marginBottom: 8 }]}>
+            <IconSymbol name="person" size={20} color={colors.muted} />
+            <TextInput
+              style={[styles.searchInput, { color: colors.text }]}
+              placeholder="Nome"
+              placeholderTextColor={colors.muted}
+              value={formNome}
+              onChangeText={setFormNome}
+            />
+          </View>
+          <View style={[styles.searchBar, { backgroundColor: colors.card, borderColor: colors.border, marginBottom: 8 }]}>
+            <IconSymbol name="envelope" size={20} color={colors.muted} />
+            <TextInput
+              style={[styles.searchInput, { color: colors.text }]}
+              placeholder="Email"
+              placeholderTextColor={colors.muted}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              value={formEmail}
+              onChangeText={setFormEmail}
+            />
+          </View>
+          <View style={[styles.searchBar, { backgroundColor: colors.card, borderColor: colors.border, marginBottom: 8 }]}>
+            <IconSymbol name="lock" size={20} color={colors.muted} />
+            <TextInput
+              style={[styles.searchInput, { color: colors.text }]}
+              placeholder={formId ? 'Senha (opcional para manter)' : 'Senha'}
+              placeholderTextColor={colors.muted}
+              secureTextEntry
+              value={formSenha}
+              onChangeText={setFormSenha}
+            />
+          </View>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <TouchableOpacity
+              disabled={saving}
+              style={[styles.quickActionCard, { backgroundColor: colors.card, borderColor: colors.border, paddingVertical: 12, flex: 1 }]}
+              onPress={() => {
+                if (!formNome || !formEmail || (!formId && !formSenha)) {
+                  Alert.alert('Atenção', 'Preencha nome, email e senha.');
+                  return;
+                }
+                if (formId) {
+                  updateUsuario(formId, { nome: formNome, email: formEmail, senha: formSenha || undefined });
+                } else {
+                  createUsuario({ nome: formNome, email: formEmail, senha: formSenha });
+                }
+              }}
+            >
+              {saving ? (
+                <ActivityIndicator color={colors.text} />
+              ) : (
+                <Text style={[styles.quickActionText, { color: colors.text }]}>{formId ? 'Salvar' : 'Criar'}</Text>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity
+              disabled={saving}
+              style={[styles.quickActionCard, { backgroundColor: colors.card, borderColor: colors.border, paddingVertical: 12, flex: 1 }]}
+              onPress={() => { setShowForm(false); setFormId(null); setFormNome(''); setFormEmail(''); setFormSenha(''); }}
+            >
+              <Text style={[styles.quickActionText, { color: colors.text }]}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {/* Search simplificada (nome/email) e botão para buscar ID se input for numérico) */}
       <View style={styles.searchContainer}>
         <View style={[styles.searchBar, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <IconSymbol name="magnifyingglass" size={20} color={colors.muted} />
           <TextInput
             style={[styles.searchInput, { color: colors.text }]}
-            placeholder="Buscar usuários..."
+            placeholder="Buscar por nome ou email (digite ID e toque no botão)"
             placeholderTextColor={colors.muted}
             value={searchQuery}
             onChangeText={setSearchQuery}
           />
+          <TouchableOpacity onPress={() => { const id = parseInt(searchQuery, 10); if (!isNaN(id)) readUsuario(id); }}>
+            {loading ? <ActivityIndicator color={colors.text} /> : <IconSymbol name="arrow.down.circle" size={20} color={colors.text} />}
+          </TouchableOpacity>
         </View>
       </View>
 
-      {/* Filters */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersContainer}>
-        {filters.map((filter) => (
-          <TouchableOpacity
-            key={filter.key}
-            style={[
-              styles.filterButton,
-              { backgroundColor: selectedFilter === filter.key ? colors.accent : colors.card },
-              { borderColor: colors.border }
-            ]}
-            onPress={() => setSelectedFilter(filter.key)}
-          >
-            <Text style={[
-              styles.filterText,
-              { color: selectedFilter === filter.key ? colors.background : colors.text }
-            ]}>
-              {filter.label}
-            </Text>
-            <View style={[
-              styles.filterBadge,
-              { backgroundColor: selectedFilter === filter.key ? colors.background + '20' : colors.muted + '20' }
-            ]}>
-              <Text style={[
-                styles.filterBadgeText,
-                { color: selectedFilter === filter.key ? colors.background : colors.muted }
-              ]}>
-                {filter.count}
-              </Text>
-            </View>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+      {/* Removido: filtros avançados */}
 
-      {/* Quick Actions */}
+      {/* Ação: Novo Usuário */}
       <View style={styles.quickActionsSection}>
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>Ações Rápidas</Text>
-        <View style={styles.quickActionsGrid}>
-          <TouchableOpacity style={[styles.quickActionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <IconSymbol name="person.badge.plus" size={24} color={colors.text} />
-            <Text style={[styles.quickActionText, { color: colors.text }]}>Novo Usuário</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.quickActionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <IconSymbol name="person.2" size={24} color={colors.text} />
-            <Text style={[styles.quickActionText, { color: colors.text }]}>Importar</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.quickActionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <IconSymbol name="square.and.arrow.up" size={24} color={colors.text} />
-            <Text style={[styles.quickActionText, { color: colors.text }]}>Exportar</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.quickActionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <IconSymbol name="gearshape" size={24} color={colors.text} />
-            <Text style={[styles.quickActionText, { color: colors.text }]}>Configurações</Text>
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity onPress={() => { setShowForm(true); setFormId(null); setFormNome(''); setFormEmail(''); setFormSenha(''); }} style={[styles.quickActionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <IconSymbol name="person.badge.plus" size={24} color={colors.text} />
+          <Text style={[styles.quickActionText, { color: colors.text }]}>Novo Usuário</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Users List */}

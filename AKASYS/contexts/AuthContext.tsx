@@ -1,5 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, ReactNode, useContext, useEffect, useState } from 'react';
+import { Alert } from 'react-native';
+import Constants from 'expo-constants';
+import { router } from 'expo-router';
 
 interface User {
   id: string;
@@ -24,6 +27,14 @@ interface AuthProviderProps {
 export function AuthProvider({ children }: AuthProviderProps) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [token, setToken] = useState<string | null>(null);
+
+  const BASE_URL = (() => {
+    const extra = (Constants.expoConfig as any)?.extra || {};
+    const configured = extra.API_BASE_URL as string | undefined;
+    if (configured) return configured;
+    return 'http://192.168.1.7:8000';
+  })();
 
   useEffect(() => {
     checkAuthState();
@@ -31,15 +42,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   const checkAuthState = async () => {
     try {
-      console.log('Checking auth state...');
-      const userData = await AsyncStorage.getItem('user');
-      if (userData) {
-        const parsedUser = JSON.parse(userData);
-        setUser(parsedUser);
-        console.log('User found in storage:', parsedUser);
-      } else {
-        console.log('No user found in storage');
-      }
+      const [storedToken, storedUser] = await Promise.all([
+        AsyncStorage.getItem('token'),
+        AsyncStorage.getItem('user'),
+      ]);
+      if (storedToken) setToken(storedToken);
+      if (storedUser) setUser(JSON.parse(storedUser));
     } catch (error) {
       console.error('Error checking auth state:', error);
     } finally {
@@ -49,34 +57,55 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   const login = async (email: string, password: string): Promise<boolean> => {
     try {
-      console.log('Attempting login with:', { email, password: '***' });
-      
-      // Simular validação de login
-      if (email === 'admin@admin.com' && password === '123456') {
-        const userData: User = {
-          id: '1',
-          email: email,
-          name: 'Administrador',
-        };
-        
-        await AsyncStorage.setItem('user', JSON.stringify(userData));
-        setUser(userData);
-        console.log('Login successful, user set:', userData);
-        return true;
+      const response = await fetch(`${BASE_URL}/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ username: email, password }).toString(),
+      });
+
+      const rawText = await response.text();
+      let data: any = null;
+      try { data = rawText ? JSON.parse(rawText) : null; } catch {}
+
+      if (!response.ok) {
+        const msg = data?.detail || rawText || `Erro: ${response.status}`;
+        Alert.alert('Erro de login', typeof msg === 'string' ? msg : 'Falha ao autenticar');
+        return false;
       }
-      
-      console.log('Login failed: invalid credentials');
-      return false;
-    } catch (error) {
+
+      const accessToken = data?.access_token as string | undefined;
+      if (!accessToken) {
+        Alert.alert('Erro de login', 'Token não retornado pelo servidor');
+        return false;
+      }
+
+      await AsyncStorage.setItem('token', accessToken);
+      setToken(accessToken);
+
+      const derivedName = email.split('@')[0];
+      const userData: User = { id: 'self', email, name: derivedName };
+      await AsyncStorage.setItem('user', JSON.stringify(userData));
+      setUser(userData);
+      return true;
+    } catch (error: any) {
       console.error('Login error:', error);
+      const message = error?.message?.includes('Network request failed')
+        ? 'Não foi possível conectar ao servidor. Verifique o IP e se o backend está rodando.'
+        : 'Ocorreu um erro ao fazer login';
+      Alert.alert('Erro', message);
       return false;
     }
   };
 
   const logout = async (): Promise<void> => {
     try {
-      await AsyncStorage.removeItem('user');
+      await Promise.all([
+        AsyncStorage.removeItem('user'),
+        AsyncStorage.removeItem('token'),
+      ]);
       setUser(null);
+      setToken(null);
+      router.replace('/login');
     } catch (error) {
       console.error('Logout error:', error);
     }
@@ -84,7 +113,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   const value: AuthContextType = {
     user,
-    isAuthenticated: !!user,
+    isAuthenticated: !!token,
     isLoading,
     login,
     logout,
