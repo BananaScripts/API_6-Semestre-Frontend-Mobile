@@ -144,12 +144,13 @@ export default function LoginScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Demo Credentials */}
+          {/* Demo Credentials 
           <View style={[styles.demoContainer, { backgroundColor: colors.card }]}>
             <Text style={[styles.demoTitle, { color: colors.text }]}>Credenciais de Demo:</Text>
             <Text style={[styles.demoText, { color: colors.muted }]}>Email: admin@admin.com</Text>
             <Text style={[styles.demoText, { color: colors.muted }]}>Senha: 123456</Text>
           </View>
+          */}
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
