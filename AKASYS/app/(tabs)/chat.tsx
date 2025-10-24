@@ -1,150 +1,193 @@
-import React, { useState } from 'react';
-import { StyleSheet, ScrollView, View, Text, TouchableOpacity, TextInput, FlatList } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { 
+  StyleSheet, 
+  View, 
+  Text, 
+  TextInput, 
+  TouchableOpacity, 
+  FlatList, 
+  KeyboardAvoidingView, 
+  Platform,
+  Alert
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors } from '@/constants/theme';
-import { Link } from 'expo-router';
+
+interface Message {
+  id: string;
+  text: string;
+  isUser: boolean;
+  timestamp: Date;
+}
+
+interface WebSocketResponse {
+  pergunta_original: string;
+  match_intencao?: string;
+  answer: string;
+}
 
 export default function ChatScreen() {
-  const colors = Colors.dark;
-  const [searchQuery, setSearchQuery] = useState('');
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [inputText, setInputText] = useState('');
+  const [isConnected, setIsConnected] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const wsRef = useRef<WebSocket | null>(null);
+  const flatListRef = useRef<FlatList>(null);
 
-  const conversations = [
-    {
-      id: 1,
-      name: 'João Silva',
-      lastMessage: 'Obrigado pela ajuda!',
-      time: '2 min',
-      unread: 2,
-      avatar: 'person.circle.fill',
-      online: true,
-    },
-    {
-      id: 2,
-      name: 'Maria Santos',
-      lastMessage: 'Preciso de mais informações sobre o projeto',
-      time: '15 min',
-      unread: 0,
-      avatar: 'person.circle.fill',
-      online: false,
-    },
-    {
-      id: 3,
-      name: 'Carlos Oliveira',
-      lastMessage: 'Vou enviar os documentos amanhã',
-      time: '1h',
-      unread: 1,
-      avatar: 'person.circle.fill',
-      online: true,
-    },
-    {
-      id: 4,
-      name: 'Ana Costa',
-      lastMessage: 'Perfeito, obrigada!',
-      time: '2h',
-      unread: 0,
-      avatar: 'person.circle.fill',
-      online: false,
-    },
-    {
-      id: 5,
-      name: 'Pedro Lima',
-      lastMessage: 'Podemos marcar uma reunião?',
-      time: '3h',
-      unread: 0,
-      avatar: 'person.circle.fill',
-      online: false,
-    },
-    {
-      id: 6,
-      name: 'Equipe Dev',
-      lastMessage: 'Nova atualização disponível',
-      time: '1d',
-      unread: 5,
-      avatar: 'person.3.fill',
-      online: false,
-    },
-  ];
+  // Conectar ao WebSocket
+  useEffect(() => {
+    connectWebSocket();
+    return () => {
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+    };
+  }, []);
 
-  const filteredConversations = conversations.filter(conv =>
-    conv.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const connectWebSocket = () => {
+    try {
+      const ws = new WebSocket('ws://127.0.0.1:8000/wb/chatbot');
+      
+      ws.onopen = () => {
+        console.log('WebSocket conectado');
+        setIsConnected(true);
+      };
 
-  const renderConversation = ({ item }: { item: any }) => (
-    <Link href={`/chat/${item.id}`} asChild>
-      <TouchableOpacity
-        style={[styles.conversationItem, { borderBottomColor: colors.border }]}
-        activeOpacity={0.7}
-      >
-        <View style={styles.avatarContainer}>
-          <View style={[styles.avatar, { backgroundColor: colors.surface }]}>
-            <IconSymbol name={item.avatar} size={24} color={colors.text} />
-          </View>
-          {item.online && <View style={[styles.onlineIndicator, { backgroundColor: colors.accent }]} />}
-        </View>
-        
-        <View style={styles.conversationContent}>
-          <View style={styles.conversationHeader}>
-            <Text style={[styles.conversationName, { color: colors.text }]}>{item.name}</Text>
-            <Text style={[styles.conversationTime, { color: colors.muted }]}>{item.time}</Text>
-          </View>
-          <View style={styles.conversationFooter}>
-            {item.unread > 0 && (
-              <View style={[styles.unreadBadge, { backgroundColor: colors.accent }]}>
-                <Text style={[styles.unreadText, { color: colors.background }]}>
-                  {item.unread > 9 ? '9+' : item.unread}
-                </Text>
-              </View>
-            )}
-          </View>
-        </View>
-      </TouchableOpacity>
-    </Link>
+      ws.onmessage = (event) => {
+        try {
+          const data: WebSocketResponse = JSON.parse(event.data);
+          const botMessage: Message = {
+            id: Date.now().toString(),
+            text: data.answer,
+            isUser: false,
+            timestamp: new Date()
+          };
+          setMessages(prev => [...prev, botMessage]);
+          setIsLoading(false);
+        } catch (error) {
+          console.error('Erro ao processar mensagem:', error);
+          setIsLoading(false);
+        }
+      };
+
+      ws.onclose = () => {
+        console.log('WebSocket desconectado');
+        setIsConnected(false);
+        // Tentar reconectar após 3 segundos
+        setTimeout(() => {
+          connectWebSocket();
+        }, 3000);
+      };
+
+      ws.onerror = (error) => {
+        console.error('Erro no WebSocket:', error);
+        setIsConnected(false);
+      };
+
+      wsRef.current = ws;
+    } catch (error) {
+      console.error('Erro ao conectar WebSocket:', error);
+      Alert.alert('Erro', 'Não foi possível conectar ao servidor');
+    }
+  };
+
+  const sendMessage = () => {
+    if (!inputText.trim() || !isConnected || isLoading) return;
+
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      text: inputText.trim(),
+      isUser: true,
+      timestamp: new Date()
+    };
+
+    setMessages(prev => [...prev, userMessage]);
+    setIsLoading(true);
+
+    // Enviar mensagem via WebSocket
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      const messageData = {
+        pergunta_original: inputText.trim()
+      };
+      wsRef.current.send(JSON.stringify(messageData));
+    }
+
+    setInputText('');
+  };
+
+  const renderMessage = ({ item }: { item: Message }) => (
+    <View style={[
+      styles.messageContainer,
+      item.isUser ? styles.userMessage : styles.botMessage
+    ]}>
+      <Text style={[
+        styles.messageText,
+        item.isUser ? styles.userMessageText : styles.botMessageText
+      ]}>
+        {item.text}
+      </Text>
+    </View>
   );
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Header */}
-      <View style={[styles.header, { borderBottomColor: colors.border }]}>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>Conversas</Text>
-        <TouchableOpacity style={[styles.newChatButton, { backgroundColor: colors.card }]}>
-          <IconSymbol name="plus" size={20} color={colors.text} />
-        </TouchableOpacity>
-      </View>
-
-      {/* Search Bar */}
-      <View style={styles.searchContainer}>
-        <View style={[styles.searchBar, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <IconSymbol name="magnifyingglass" size={20} color={colors.muted} />
-          <TextInput
-            style={[styles.searchInput, { color: colors.text }]}
-            placeholder="Buscar conversas..."
-            placeholderTextColor={colors.muted}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
-          {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery('')}>
-              <IconSymbol name="xmark.circle.fill" size={20} color={colors.muted} />
-            </TouchableOpacity>
-          )}
+    <SafeAreaView style={styles.container}>
+      <KeyboardAvoidingView 
+        style={styles.keyboardView}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        {/* Status de conexão */}
+        <View style={styles.statusBar}>
+          <View style={[
+            styles.statusIndicator, 
+            { backgroundColor: isConnected ? '#4CAF50' : '#F44336' }
+          ]} />
+          <Text style={styles.statusText}>
+            {isConnected ? 'Conectado' : 'Desconectado'}
+          </Text>
         </View>
-      </View>
 
-      {/* Conversations List */}
-      <FlatList
-        data={filteredConversations}
-        keyExtractor={(item) => item.id.toString()}
-        renderItem={renderConversation}
-        style={styles.conversationsList}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.conversationsContent}
-      />
+        {/* Lista de mensagens */}
+        <FlatList
+          ref={flatListRef}
+          data={messages}
+          keyExtractor={(item) => item.id}
+          renderItem={renderMessage}
+          style={styles.messagesList}
+          contentContainerStyle={styles.messagesContent}
+          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+          onLayout={() => flatListRef.current?.scrollToEnd({ animated: true })}
+        />
 
-      {/* Floating Action Button */}
-      <TouchableOpacity style={[styles.fab, { backgroundColor: colors.accent }]}>
-        <IconSymbol name="plus" size={24} color={colors.background} />
-      </TouchableOpacity>
+        {/* Indicador de carregamento */}
+        {isLoading && (
+          <View style={styles.loadingContainer}>
+            <Text style={styles.loadingText}>IA está digitando...</Text>
+          </View>
+        )}
+
+        {/* Caixa de entrada */}
+        <View style={styles.inputContainer}>
+          <TextInput
+            style={styles.textInput}
+            value={inputText}
+            onChangeText={setInputText}
+            placeholder="Digite sua mensagem..."
+            placeholderTextColor="#999"
+            multiline
+            maxLength={500}
+            editable={isConnected && !isLoading}
+          />
+          <TouchableOpacity
+            style={[
+              styles.sendButton,
+              (!inputText.trim() || !isConnected || isLoading) && styles.sendButtonDisabled
+            ]}
+            onPress={sendMessage}
+            disabled={!inputText.trim() || !isConnected || isLoading}
+          >
+            <Text style={styles.sendButtonText}>Enviar</Text>
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -152,128 +195,111 @@ export default function ChatScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#000000',
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
+  keyboardView: {
+    flex: 1,
   },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-  },
-  newChatButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  searchContainer: {
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-  },
-  searchBar: {
+  statusBar: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  searchInput: {
-    flex: 1,
-    marginLeft: 12,
-    fontSize: 16,
-  },
-  conversationsList: {
-    flex: 1,
-  },
-  conversationsContent: {
-    paddingBottom: 20,
-    paddingHorizontal: 0,
-  },
-  conversationItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
     paddingVertical: 8,
-    borderBottomWidth: 1,
+    backgroundColor: '#000000',
   },
-  avatarContainer: {
-    position: 'relative',
-    marginRight: 8,
-  },
-  avatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  onlineIndicator: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
+  statusIndicator: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    borderWidth: 1.5,
+    marginRight: 8,
+  },
+  statusText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  messagesList: {
+    flex: 1,
+    backgroundColor: '#000000',
+  },
+  messagesContent: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  messageContainer: {
+    marginVertical: 4,
+    maxWidth: '80%',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 20,
+  },
+  userMessage: {
+    backgroundColor: '#000000',
+    borderWidth: 1,
+    borderColor: '#FFFFFF',
+    alignSelf: 'flex-end',
+  },
+  botMessage: {
+    backgroundColor: '#FFFFFF',
+    alignSelf: 'flex-start',
+  },
+  messageText: {
+    fontSize: 16,
+    lineHeight: 20,
+  },
+  userMessageText: {
+    color: '#FFFFFF',
+  },
+  botMessageText: {
+    color: '#000000',
+  },
+  loadingContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  loadingText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontStyle: 'italic',
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#000000',
+    borderTopWidth: 1,
+    borderTopColor: '#333333',
+  },
+  textInput: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    color: '#000000',
+    fontSize: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 20,
+    maxHeight: 100,
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: '#CCCCCC',
+  },
+  sendButton: {
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 20,
+    borderWidth: 1,
     borderColor: '#000000',
   },
-  conversationContent: {
-    flex: 1,
-    minWidth: 0,
+  sendButtonDisabled: {
+    backgroundColor: '#333333',
+    borderColor: '#666666',
   },
-  conversationHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 0,
-  },
-  conversationName: {
-    fontSize: 14,
+  sendButtonText: {
+    color: '#000000',
+    fontSize: 16,
     fontWeight: '600',
-    flex: 1,
-  },
-  conversationTime: {
-    fontSize: 10,
-    marginLeft: 4,
-  },
-  conversationFooter: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-    marginTop: 2,
-  },
-  unreadBadge: {
-    minWidth: 16,
-    height: 16,
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginLeft: 4,
-  },
-  unreadText: {
-    fontSize: 10,
-    fontWeight: 'bold',
-  },
-  fab: {
-    position: 'absolute',
-    bottom: 20,
-    right: 20,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
   },
 });
