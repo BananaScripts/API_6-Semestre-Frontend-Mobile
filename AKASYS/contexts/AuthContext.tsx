@@ -1,8 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, ReactNode, useContext, useEffect, useState } from 'react';
 import { Alert } from 'react-native';
-import Constants from 'expo-constants';
 import { router } from 'expo-router';
+import { getApiBaseUrl } from '@/config/api';
 
 interface User {
   id: string;
@@ -29,12 +29,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [token, setToken] = useState<string | null>(null);
 
-  const BASE_URL = (() => {
-    const extra = (Constants.expoConfig as any)?.extra || {};
-    const configured = extra.API_BASE_URL as string | undefined;
-    if (configured) return configured;
-    return 'http://192.168.1.7:8000';
-  })();
+  const BASE_URL = getApiBaseUrl();
 
   useEffect(() => {
     checkAuthState();

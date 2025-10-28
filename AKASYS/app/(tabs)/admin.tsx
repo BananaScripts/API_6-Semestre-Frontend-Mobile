@@ -1,21 +1,17 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { StyleSheet, ScrollView, View, Text, TouchableOpacity, TextInput, FlatList, Switch, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
-import Constants from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getApiBaseUrl } from '@/config/api';
 
 export default function AdminScreen() {
   const colors = Colors.dark;
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFilter, setSelectedFilter] = useState('all');
 
-  const BASE_URL = useMemo(() => {
-    const extra = (Constants.expoConfig as any)?.extra || {};
-    const configured = extra.API_BASE_URL as string | undefined;
-    return configured ?? 'http://192.168.1.7:8000';
-  }, []);
+  const BASE_URL = getApiBaseUrl();
 
   type Usuario = { id: number; nome: string; email: string; senha?: string };
 

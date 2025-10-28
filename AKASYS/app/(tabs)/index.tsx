@@ -10,9 +10,8 @@ import {
   ScrollView,
 } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
-import Constants from "expo-constants";
-import { Platform } from "react-native";
 import * as FileSystem from "expo-file-system/legacy";
+import { getApiBaseUrl } from "@/config/api";
 
 export default function App() {
   const [email, setEmail] = useState("");
@@ -30,13 +29,7 @@ export default function App() {
   } | null>(null);
   const [uploadLoading, setUploadLoading] = useState(false);
 
-  const BASE_URL = (() => {
-    const extra = (Constants.expoConfig as any)?.extra || {};
-    const configured = extra.API_BASE_URL as string | undefined;
-    if (configured) return configured;
-    if (Platform.OS === "android") return "http://192.168.1.7:8000"; // Android emulator
-    return "http://localhost:8000"; // iOS simulator / web fallback
-  })();
+  const BASE_URL = getApiBaseUrl();
 
   const handleEnviar = async () => {
     if (!email || !assunto || !corpo) {
