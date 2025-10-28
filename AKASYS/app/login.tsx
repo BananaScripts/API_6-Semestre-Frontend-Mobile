@@ -3,19 +3,35 @@ import { Colors } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
 import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import {
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getApiBaseUrl } from '@/config/api';
 
 export default function LoginScreen() {
   const colors = Colors.dark;
   // Cores de destaque
   const blue = Colors.dark.primary;
   const gold = Colors.dark.highlight;
-  const { login, isAuthenticated, isLoading: authLoading } = useAuth();
+  // não usamos a função login do contexto aqui porque fazemos a requisição direta ao servidor
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const { login } = useAuth();
+
+  // Substitua pela URL do endpoint real do seu servidor
+  const BASE_URL = getApiBaseUrl();
 
   // Redirecionar se já estiver autenticado
   useEffect(() => {
@@ -24,23 +40,78 @@ export default function LoginScreen() {
     }
   }, [isAuthenticated, authLoading]);
 
-  const handleLogin = async () => {
-    if (!email.trim() || !password.trim()) {
-      Alert.alert('Erro', 'Por favor, preencha todos os campos');
-      return;
-    }
+const handleLogin = async () => {
+  if (!email.trim() || !password.trim()) {
+    Alert.alert('Erro', 'Por favor, preencha todos os campos');
+    return;
+  }
 
     setIsLoading(true);
-    
+
+  const success = await login(email, password); // usa o login do contexto
+  setIsLoading(false);
+
+  if (success) {
+    router.replace('/(tabs)'); // só redireciona se login do contexto tiver setado token
+  }
+
     try {
-      const success = await login(email, password);
-      if (success) {
-        // Redirecionar para a tela principal após login bem-sucedido
+      // Monta body Form URL Encoded com os campos username e password
+      const body = new URLSearchParams({
+        username: email, // username recebe o email do usuário
+        password: password,
+      }).toString();
+
+      const res = await fetch(`${BASE_URL}/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Accept: 'application/json',
+        },
+        body,
+      });
+
+      if (!res.ok) {
+        // Tenta ler mensagem de erro do servidor, se houver
+        let text;
+        try {
+          const errJson = await res.json();
+          text = errJson?.error_description || errJson?.message || JSON.stringify(errJson);
+        } catch {
+          text = await res.text();
+        }
+        Alert.alert('Erro', `Falha ao autenticar: ${text || res.statusText}`);
+        return;
+      }
+
+      const json = await res.json();
+
+      // Verifica o formato esperado
+      // Exemplo esperado:
+      // {
+      //   "access_token": "...",
+      //   "token_type": "bearer"
+      // }
+      if (json && json.access_token) {
+        const tokenData = {
+          access_token: json.access_token,
+          token_type: json.token_type || 'bearer',
+          // opcional: expiry, refresh_token dependendo do servidor
+        };
+
+        // Salva token localmente (use um armazenamento mais seguro se possível)
+        await AsyncStorage.setItem('auth_token', JSON.stringify(tokenData));
+
+        // Opcional: se o seu AuthContext possuir função para setar token, você pode chamá-la aqui.
+        // Ex.: auth.setToken(tokenData) -- adaptar conforme sua implementação.
+
+        // Redireciona para a tela principal após login bem-sucedido
         router.replace('/(tabs)');
       } else {
-        Alert.alert('Erro', 'Email ou senha incorretos');
+        Alert.alert('Erro', 'Resposta do servidor inválida. Não foi possível obter access_token.');
       }
-    } catch (error) {
+    } catch (error: any) {
+      console.error('handleLogin error:', error);
       Alert.alert('Erro', 'Ocorreu um erro ao fazer login');
     } finally {
       setIsLoading(false);
@@ -143,14 +214,6 @@ export default function LoginScreen() {
               )}
             </TouchableOpacity>
           </View>
-
-          {/* Demo Credentials 
-          <View style={[styles.demoContainer, { backgroundColor: colors.card }]}>
-            <Text style={[styles.demoTitle, { color: colors.text }]}>Credenciais de Demo:</Text>
-            <Text style={[styles.demoText, { color: colors.muted }]}>Email: admin@admin.com</Text>
-            <Text style={[styles.demoText, { color: colors.muted }]}>Senha: 123456</Text>
-          </View>
-          */}
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>

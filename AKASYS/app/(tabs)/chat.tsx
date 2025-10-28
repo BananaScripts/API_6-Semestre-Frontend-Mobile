@@ -11,6 +11,7 @@ import {
   Alert
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { getWebSocketUrl } from '@/config/api';
 
 interface Message {
   id: string;
@@ -33,6 +34,9 @@ export default function ChatScreen() {
   const wsRef = useRef<WebSocket | null>(null);
   const flatListRef = useRef<FlatList>(null);
 
+  // Get WebSocket URL from config
+  const WS_URL = getWebSocketUrl();
+
   // Conectar ao WebSocket
   useEffect(() => {
     connectWebSocket();
@@ -45,7 +49,7 @@ export default function ChatScreen() {
 
   const connectWebSocket = () => {
     try {
-      const ws = new WebSocket('ws://127.0.0.1:8000/wb/chatbot');
+      const ws = new WebSocket(`${WS_URL}/wb/chatbot`);
       
       ws.onopen = () => {
         console.log('WebSocket conectado');
